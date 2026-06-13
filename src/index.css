@@ -1,0 +1,21 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+#root {
+  display: flex;
+}
+body {
+  font-family: system-ui, sans-serif;
+  background: #282c34;
+  color: #eee;
+}
+canvas {
+  touch-action: none;
+  display: block;
+} /* SPEC: no browser gesture hijack */
