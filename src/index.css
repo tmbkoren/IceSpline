@@ -19,3 +19,17 @@ canvas {
   touch-action: none;
   display: block;
 } /* SPEC: no browser gesture hijack */
+
+.control-panel {
+  width: 240px;
+  flex: 0 0 240px;      /* fixed column, don't grow/shrink */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;      /* scroll panel internally, not the page */
+}
+.control-panel label {
+  display: flex;
+  flex-direction: column;  /* label text stacked above its input */
+}
