@@ -8,6 +8,7 @@
 // React in the loop (CLAUDE.md rules 1-3).
 
 import { store } from '../core/state'
+import { gridToScreen } from './transform'
 
 /**
  * Starts the draw loop on the given canvas and returns a cleanup function
@@ -26,7 +27,8 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
   const draw = () => {
     // Pull the CURRENT state every frame. No subscription, no hook — just a
     // snapshot read. Whatever the UI or input last wrote, we see it here.
-    const { zoom, viewOffset } = store.getState()
+    const { zoom, viewOffset, points, gridBlocks, highlightedBlocks, selectedIndex, showTangents } =
+      store.getState()
     const { width, height } = canvas
 
     // 1) Clear/paint the background. We repaint the whole canvas each frame
@@ -74,9 +76,97 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
     ctx.strokeStyle = 'rgba(95, 211, 240, 0.30)'
     queueLines((g) => g % 16 === 0)
 
-    // (track blocks, the curve, tangent handles, control points, and the
-    //  coordinate label are layered in here in later milestones — in this
-    //  back-to-front draw order so each sits on top of the last.)
+    // 3) Track blocks (the rasterized output). Each key is an "x,y" grid cell;
+    //    we snap BOTH edges to whole pixels (round x and x+1 separately) so
+    //    adjacent cells share an exact border with no seams or overlap, then
+    //    cull anything fully offscreen. fillStyle is set once for the whole set.
+    const fillCells = (cells: Set<string>, style: string) => {
+      ctx.fillStyle = style
+      for (const key of cells) {
+        const comma = key.indexOf(',')
+        const x = +key.slice(0, comma)
+        const y = +key.slice(comma + 1)
+        const sx0 = Math.round((x - viewOffset.x) * zoom)
+        const sy0 = Math.round((y - viewOffset.y) * zoom)
+        const sx1 = Math.round((x + 1 - viewOffset.x) * zoom)
+        const sy1 = Math.round((y + 1 - viewOffset.y) * zoom)
+        if (sx1 < 0 || sy1 < 0 || sx0 > width || sy0 > height) continue
+        ctx.fillRect(sx0, sy0, sx1 - sx0, sy1 - sy0)
+      }
+    }
+    fillCells(gridBlocks, '#a0e8ff') // ice blue
+    // 4) Highlighted blocks (build mode, M5) — empty until then, but drawn here
+    //    to lock in the back-to-front order.
+    fillCells(highlightedBlocks, 'rgba(255, 0, 0, 0.4)')
+
+    // 5) Bézier curve overlay — a thin white reference line through the spline.
+    //    Canvas's bezierCurveTo draws the exact cubic, so we just feed it the
+    //    absolute control points per segment: c1 = p0.pos + p0.outTangent,
+    //    c2 = p1.pos + p1.inTangent (tangents are relative offsets).
+    if (points.length >= 2) {
+      ctx.beginPath()
+      const start = gridToScreen(points[0].pos.x, points[0].pos.y, zoom, viewOffset)
+      ctx.moveTo(start.x, start.y)
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i]
+        const p1 = points[i + 1]
+        const c1 = gridToScreen(
+          p0.pos.x + p0.outTangent.x, p0.pos.y + p0.outTangent.y, zoom, viewOffset,
+        )
+        const c2 = gridToScreen(
+          p1.pos.x + p1.inTangent.x, p1.pos.y + p1.inTangent.y, zoom, viewOffset,
+        )
+        const end = gridToScreen(p1.pos.x, p1.pos.y, zoom, viewOffset)
+        ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, end.x, end.y)
+      }
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+    }
+
+    // 6) Tangent lines + handles (when enabled). A handle sits at anchor +
+    //    tangent; we skip zero-length tangents (nothing to grab, and the dot
+    //    would just hide the anchor). Colors per SPEC: mirrored = both red,
+    //    otherwise in = green, out = blue.
+    if (showTangents) {
+      for (const p of points) {
+        const a = gridToScreen(p.pos.x, p.pos.y, zoom, viewOffset)
+        const drawHandle = (tx: number, ty: number, color: string) => {
+          if (tx === 0 && ty === 0) return
+          const h = gridToScreen(p.pos.x + tx, p.pos.y + ty, zoom, viewOffset)
+          ctx.beginPath()
+          ctx.moveTo(a.x, a.y)
+          ctx.lineTo(h.x, h.y)
+          ctx.strokeStyle = color
+          ctx.lineWidth = 1
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.arc(h.x, h.y, 4, 0, Math.PI * 2)
+          ctx.fillStyle = color
+          ctx.fill()
+        }
+        const inColor = p.mirrored ? '#ff5a5a' : '#5fe08a'
+        const outColor = p.mirrored ? '#ff5a5a' : '#5fa8ff'
+        drawHandle(p.inTangent.x, p.inTangent.y, inColor)
+        drawHandle(p.outTangent.x, p.outTangent.y, outColor)
+      }
+    }
+
+    // 7) Control points: red dot, yellow + larger when selected. A dark hairline
+    //    keeps them legible on top of the light ice fill.
+    for (let i = 0; i < points.length; i++) {
+      const s = gridToScreen(points[i].pos.x, points[i].pos.y, zoom, viewOffset)
+      const selected = i === selectedIndex
+      ctx.beginPath()
+      ctx.arc(s.x, s.y, selected ? 7 : 5, 0, Math.PI * 2)
+      ctx.fillStyle = selected ? '#ffd54a' : '#ff5a5a'
+      ctx.fill()
+      ctx.lineWidth = 1
+      ctx.strokeStyle = 'rgba(13, 27, 42, 0.85)'
+      ctx.stroke()
+    }
+
+    // (8: coordinate label — a later polish milestone.)
 
     // Ask the browser to call `draw` again before the next repaint (~60fps).
     // Re-assigning `raf` each frame keeps the id current so cleanup cancels

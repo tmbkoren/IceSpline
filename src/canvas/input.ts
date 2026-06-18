@@ -12,10 +12,17 @@
 // none` on the canvas (index.css) stops the browser from hijacking drags/pinch.
 
 import { store } from '../core/state'
+import { gridToScreen, screenToGrid } from './transform'
 
 // Camera limits (SPEC: zoom slider 2-40 px/block).
 const MIN_ZOOM = 2
 const MAX_ZOOM = 40
+
+// How close (screen px) a left-click must be to a control point to grab it.
+const HIT_RADIUS_PX = 8
+// Movement (screen px) below which a left press+release counts as a click, not a
+// drag — so a click on empty space adds a point, but a stray drag doesn't.
+const DRAG_THRESHOLD_PX = 4
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
@@ -39,7 +46,82 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
   // Previous pinch state (two-finger). null when not pinching.
   let pinchPrev: { dist: number; midX: number; midY: number } | null = null
 
+  // Active left-button edit gesture (mouse): dragging an anchor, dragging a
+  // tangent handle, or a press on empty space (add a point on release if it was
+  // a click, not a drag). null when no left edit is in progress.
+  let editing:
+    | { kind: 'anchor'; index: number }
+    | { kind: 'handle'; index: number; which: 'in' | 'out' }
+    | { kind: 'empty'; downX: number; downY: number }
+    | null = null
+
   // --- Helpers -----------------------------------------------------------
+
+  type Hit =
+    | { kind: 'anchor'; index: number }
+    | { kind: 'handle'; index: number; which: 'in' | 'out' }
+    | { kind: 'curve'; index: number; t: number }
+
+  // Topmost thing within range of screen point `p`, or null. SPEC hit order:
+  // for each point (last->first), in-handle -> out-handle -> anchor; then the
+  // curve itself; then empty space (null). Zero-length handles are skipped —
+  // they coincide with the anchor and have nothing to grab.
+  const hitTest = (p: { x: number; y: number }): Hit | null => {
+    const { points, zoom, viewOffset, showTangents, curveWidth } = store.getState()
+    const near = (gx: number, gy: number) => {
+      const s = gridToScreen(gx, gy, zoom, viewOffset)
+      const dx = p.x - s.x
+      const dy = p.y - s.y
+      return dx * dx + dy * dy <= HIT_RADIUS_PX * HIT_RADIUS_PX
+    }
+    for (let i = points.length - 1; i >= 0; i--) {
+      const pt = points[i]
+      if (showTangents) {
+        const handles = [
+          { which: 'in' as const, t: pt.inTangent },
+          { which: 'out' as const, t: pt.outTangent },
+        ]
+        for (const { which, t } of handles) {
+          if (t.x === 0 && t.y === 0) continue
+          if (near(pt.pos.x + t.x, pt.pos.y + t.y)) return { kind: 'handle', index: i, which }
+        }
+      }
+      if (near(pt.pos.x, pt.pos.y)) return { kind: 'anchor', index: i }
+    }
+
+    // Curve hit: sample each cubic and find the nearest point to the click. The
+    // "near curve" threshold scales with the rendered road width (SPEC 312).
+    const CURVE_STEPS = 24
+    const thresholdPx = (curveWidth * zoom) / 2 + 5
+    let best: { index: number; t: number; d2: number } | null = null
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i]
+      const p1 = points[i + 1]
+      const c0 = p0.pos
+      const c1 = { x: p0.pos.x + p0.outTangent.x, y: p0.pos.y + p0.outTangent.y }
+      const c2 = { x: p1.pos.x + p1.inTangent.x, y: p1.pos.y + p1.inTangent.y }
+      const c3 = p1.pos
+      for (let k = 0; k <= CURVE_STEPS; k++) {
+        const t = k / CURVE_STEPS
+        const u = 1 - t
+        const b0 = u * u * u
+        const b1 = 3 * u * u * t
+        const b2 = 3 * u * t * t
+        const b3 = t * t * t
+        const gx = b0 * c0.x + b1 * c1.x + b2 * c2.x + b3 * c3.x
+        const gy = b0 * c0.y + b1 * c1.y + b2 * c2.y + b3 * c3.y
+        const s = gridToScreen(gx, gy, zoom, viewOffset)
+        const dx = p.x - s.x
+        const dy = p.y - s.y
+        const d2 = dx * dx + dy * dy
+        if (best === null || d2 < best.d2) best = { index: i, t, d2 }
+      }
+    }
+    if (best && best.d2 <= thresholdPx * thresholdPx) {
+      return { kind: 'curve', index: best.index, t: best.t }
+    }
+    return null
+  }
 
   // Pointer events report page coordinates (clientX/Y); we want pixels relative
   // to the canvas's top-left, which is what the renderer treats as screen space.
@@ -87,10 +169,35 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     const p = pos(e)
 
     if (e.pointerType === 'mouse') {
-      // Mouse pans on RIGHT button only (button 2). Left/middle are reserved
-      // for future editing (add/move/delete points) and do nothing yet.
       if (e.button === 2) {
+        // Right button: pan.
         panLast = p
+        canvas.setPointerCapture(e.pointerId)
+      } else if (e.button === 1) {
+        // Middle button: delete the anchor under the cursor (records history).
+        // Handles aren't deletable, so only an anchor hit counts. preventDefault
+        // stops the browser's middle-click autoscroll.
+        e.preventDefault()
+        const hit = hitTest(p)
+        if (hit?.kind === 'anchor') store.getState().deletePoint(hit.index)
+      } else if (e.button === 0) {
+        // Left button: grab an anchor or a tangent handle, or arm an
+        // add-on-release if pressed over empty space.
+        const hit = hitTest(p)
+        if (hit?.kind === 'anchor') {
+          store.getState().select(hit.index)
+          editing = { kind: 'anchor', index: hit.index }
+        } else if (hit?.kind === 'handle') {
+          store.getState().select(hit.index)
+          editing = { kind: 'handle', index: hit.index, which: hit.which }
+        } else if (hit?.kind === 'curve') {
+          // Insert a node on the curve (exact split), then immediately let the
+          // user drag the new anchor — it lands at index hit.index + 1.
+          store.getState().insertPoint(hit.index, hit.t)
+          editing = { kind: 'anchor', index: hit.index + 1 }
+        } else {
+          editing = { kind: 'empty', downX: p.x, downY: p.y }
+        }
         canvas.setPointerCapture(e.pointerId)
       }
       return
@@ -117,6 +224,21 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     const p = pos(e)
 
     if (e.pointerType === 'mouse') {
+      if (editing?.kind === 'anchor') {
+        // Drag the grabbed anchor. Shift = fix tangents in world space.
+        const { zoom, viewOffset } = store.getState()
+        const g = screenToGrid(p.x, p.y, zoom, viewOffset)
+        store.getState().movePoint(editing.index, g, e.shiftKey)
+        return
+      }
+      if (editing?.kind === 'handle') {
+        // Drag a tangent handle (mirrors the opposite handle if the point is
+        // mirrored — handled in the store).
+        const { zoom, viewOffset } = store.getState()
+        const g = screenToGrid(p.x, p.y, zoom, viewOffset)
+        store.getState().moveTangent(editing.index, editing.which, g)
+        return
+      }
       if (panLast) {
         pan(p.x - panLast.x, p.y - panLast.y)
         panLast = p
@@ -151,6 +273,21 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     canvas.releasePointerCapture(e.pointerId)
 
     if (e.pointerType === 'mouse') {
+      if (editing?.kind === 'anchor' || editing?.kind === 'handle') {
+        // End of a move-drag: commit one history snapshot (no-op if unchanged).
+        store.getState().commitEdit()
+        editing = null
+      } else if (editing?.kind === 'empty') {
+        // Pressed empty space: add a point only if this was a click, not a drag.
+        const p = pos(e)
+        const dx = p.x - editing.downX
+        const dy = p.y - editing.downY
+        if (dx * dx + dy * dy <= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+          const { zoom, viewOffset } = store.getState()
+          store.getState().addPoint(screenToGrid(editing.downX, editing.downY, zoom, viewOffset))
+        }
+        editing = null
+      }
       panLast = null
       return
     }
@@ -179,6 +316,51 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
 
   const onContextMenu = (e: MouseEvent) => e.preventDefault() // right-drag != menu
 
+  // Keyboard shortcuts (SPEC: Design Mode editing). Window-level because the
+  // <canvas> isn't focusable. We bail if the user is typing in a form control
+  // so e.g. pressing "c" in the width field doesn't clear the whole track.
+  const onKeyDown = (e: KeyboardEvent) => {
+    const el = e.target as HTMLElement | null
+    if (
+      el &&
+      (el.tagName === 'INPUT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.tagName === 'SELECT' ||
+        el.isContentEditable)
+    ) {
+      return
+    }
+
+    const s = store.getState()
+
+    // Undo/redo: Ctrl+Z (or Cmd+Z), Ctrl+Y, and Ctrl/Cmd+Shift+Z for the Mac
+    // habit. preventDefault so the browser's own undo doesn't also fire.
+    if (e.ctrlKey || e.metaKey) {
+      const k = e.key.toLowerCase()
+      if (k === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) s.redo()
+        else s.undo()
+      } else if (k === 'y') {
+        e.preventDefault()
+        s.redo()
+      }
+      return
+    }
+
+    switch (e.key.toLowerCase()) {
+      case 'c': // clear all (records history)
+        s.clearPoints()
+        break
+      case 'm': // toggle tangent mirroring on the selected point
+        if (s.selectedIndex !== null) s.toggleMirror(s.selectedIndex)
+        break
+      case 't': // toggle global tangent visibility
+        s.toggleTangents()
+        break
+    }
+  }
+
   // --- Wire up + teardown ------------------------------------------------
 
   canvas.addEventListener('pointerdown', onPointerDown)
@@ -188,6 +370,7 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
   // passive:false: we MUST be allowed to preventDefault to block page scroll.
   canvas.addEventListener('wheel', onWheel, { passive: false })
   canvas.addEventListener('contextmenu', onContextMenu)
+  window.addEventListener('keydown', onKeyDown)
 
   return () => {
     canvas.removeEventListener('pointerdown', onPointerDown)
@@ -196,5 +379,6 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     canvas.removeEventListener('pointercancel', onPointerUp)
     canvas.removeEventListener('wheel', onWheel)
     canvas.removeEventListener('contextmenu', onContextMenu)
+    window.removeEventListener('keydown', onKeyDown)
   }
 }
