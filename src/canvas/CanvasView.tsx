@@ -8,6 +8,7 @@
 
 import { useEffect, useRef } from 'react'
 import { startRenderLoop } from './renderer'
+import { attachInput } from './input'
 
 export function CanvasView() {
   // A ref is a stable "box" that holds a value across renders without causing
@@ -38,12 +39,18 @@ export function CanvasView() {
     // Start the imperative loop; it returns its own cleanup (cancels the RAF).
     const stop = startRenderLoop(canvas)
 
-    // The cleanup function: React runs this on unmount. Stopping the loop AND
-    // removing the listener prevents leaks and duplicate loops — critical under
-    // StrictMode, which intentionally mounts→unmounts→remounts in dev to surface
-    // exactly this kind of missing cleanup.
+    // Attach pan/zoom input (mouse + touch); also returns its own cleanup that
+    // removes every listener it added.
+    const detachInput = attachInput(canvas)
+
+    // The cleanup function: React runs this on unmount. Stopping the loop,
+    // detaching input, AND removing the resize listener prevents leaks and
+    // duplicate loops/handlers — critical under StrictMode, which intentionally
+    // mounts→unmounts→remounts in dev to surface exactly this kind of missing
+    // cleanup.
     return () => {
       stop()
+      detachInput()
       window.removeEventListener('resize', resize)
     }
   }, [])
