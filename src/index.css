@@ -249,6 +249,28 @@ input[type="range"]::-moz-range-thumb {
   flex: 1;
 }
 
+/* --- About section (pinned to the bottom of the drawer) ------------------ */
+.about {
+  margin-top: auto; /* push to the bottom of the flex-column drawer body */
+  padding-top: 12px;
+  border-top: 1px solid var(--line-dim);
+  font-size: 10px;
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+  color: var(--text-mut);
+}
+.about p {
+  margin: 0 0 8px;
+}
+.about a {
+  color: var(--line);
+  text-decoration: none;
+  letter-spacing: 0.08em;
+}
+.about a:hover {
+  text-decoration: underline;
+}
+
 /* --- Floating action dock ------------------------------------------------ */
 
 .dock {

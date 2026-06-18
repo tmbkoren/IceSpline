@@ -16,6 +16,11 @@ import { downloadMtrack, openMtrackDialog } from '../core/mtrack'
 import { downloadLitematic } from '../core/litematic'
 import { ControlsDialog } from './ControlsDialog'
 
+// Public source link shown in the About section. Also serves AGPL §13 good practice
+// (a web app should offer users a way to reach its source).
+// TODO: replace with the real repository URL.
+const SOURCE_URL = 'https://github.com/tmbkoren/IceSpline';
+
 // Open a .mtrack and load it into the store. Shared shape with the Ctrl+O path in
 // input.ts; kept tiny rather than abstracted into the store (file dialogs are app
 // glue, not state). A dismissed picker resolves null (no-op); a bad file alerts.
@@ -224,6 +229,18 @@ export function ControlPanel() {
         <button type="button" className="btn" onClick={() => setHelpOpen(true)}>
           Controls &amp; shortcuts
         </button>
+
+        {/* About — pinned to the bottom of the drawer (margin-top:auto). Brief blurb
+            + source link (also the AGPL "Source" affordance). */}
+        <section className="about">
+          <p>
+            IceSpline plans Minecraft ice-road paths as cubic Bézier splines,
+            rasterized onto the block grid and exportable as a Litematica schematic.
+          </p>
+          <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer">
+            Source code ↗
+          </a>
+        </section>
       </div>
       </aside>
 
