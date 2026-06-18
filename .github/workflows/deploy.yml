@@ -13,13 +13,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Emscripten
         run: |
-          git clone --depth 1 https://github.com/emscripten-core/emsdk.git
-          cd emsdk
+          # Clone OUTSIDE the workspace so Vitest's **/*.test.js glob never picks
+          # up emsdk's own test fixtures.
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk"
           ./emsdk install latest
           ./emsdk activate latest
           # Persist emcc on PATH for subsequent steps (each step is a fresh shell)
-          echo "$PWD" >> "$GITHUB_PATH"
-          echo "$PWD/upstream/emscripten" >> "$GITHUB_PATH"
+          echo "$HOME/emsdk" >> "$GITHUB_PATH"
+          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
       - run: bash wasm/build.sh
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
