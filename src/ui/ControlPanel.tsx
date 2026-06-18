@@ -68,7 +68,7 @@ export function ControlPanel() {
           <input
             type="range"
             min={1}
-            max={16}
+            max={64}
             step={1}
             value={curveWidth}
             // e.target.value is always a string from the DOM, so Number() it.

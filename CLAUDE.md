@@ -31,8 +31,11 @@ npm run lint       # ESLint + tsc --noEmit
 bash wasm/build.sh # emcc wasm/curve.cpp -> public/curve.js (+ curve.wasm)
 ```
 
-`bash wasm/build.sh` must be run before `npm run build` (the build needs the
-emitted `curve.js`/`curve.wasm`). CI runs it first — see `docs/DEPLOYMENT.md`.
+`bash wasm/build.sh` must be run before `npm run build` AND before `npm test`
+(the build needs the emitted `curve.js`/`curve.wasm`; the differential test +
+benchmark load `public/curve.js` at runtime). Those artifacts are gitignored, so
+a fresh clone must build first or the WASM-loading tests fail. CI runs build.sh
+first — see `docs/DEPLOYMENT.md`.
 
 ## Architecture (one screen)
 
