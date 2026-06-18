@@ -51,6 +51,13 @@ const GROUPS: Group[] = [
       { action: 'Zoom', keys: ['Two-finger pinch'] },
     ],
   },
+  {
+    title: 'BUILD MODE',
+    items: [
+      { action: 'Mark / unmark a placed block', keys: ['Click / Tap'] },
+      { action: 'Clear all highlights', keys: ['R'] },
+    ],
+  },
 ]
 
 export function ControlsDialog({ onClose }: { onClose: () => void }) {

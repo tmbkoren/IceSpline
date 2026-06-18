@@ -82,6 +82,11 @@ export interface AppState {
   // --- selection (no history; not a curve edit) ---
   select: (index: number | null) => void
 
+  // --- build mode: track which blocks are "placed" (highlighted). Highlights
+  //     are a display overlay over gridBlocks, never part of undo history. ---
+  toggleHighlight: (key: string) => void
+  clearHighlights: () => void
+
   // --- geometry edits ---
   // `addPoint` appends a new node to whichever endpoint is nearer the click
   // (SPEC); discrete, so it records history. `movePoint`/`moveTangent` run on
@@ -119,6 +124,18 @@ function clonePoints(pts: ControlPoint[]): ControlPoint[] {
   }))
 }
 
+/**
+ * Drop any highlighted blocks that no longer sit on the track (e.g. after an edit
+ * shrinks the road), so a stale highlight can't render as a floating red cell.
+ * Returns the SAME set reference when nothing changed (avoids needless updates).
+ */
+function pruneHighlights(gridBlocks: Set<string>, highlighted: Set<string>): Set<string> {
+  if (highlighted.size === 0) return highlighted
+  const out = new Set<string>()
+  for (const k of highlighted) if (gridBlocks.has(k)) out.add(k)
+  return out.size === highlighted.size ? highlighted : out
+}
+
 /** Structural equality of two point lists — used to skip empty commits. */
 function samePoints(a: ControlPoint[], b: ControlPoint[]): boolean {
   if (a.length !== b.length) return false
@@ -152,10 +169,10 @@ export const store = createStore<AppState>((set, get) => {
   // recompute blocks (TS reference now; WASM + incremental in the perf pass).
   const setPoints = (pts: ControlPoint[], recordHistory: boolean) => {
     const s = get()
-    const next: Partial<AppState> = {
-      points: pts,
-      gridBlocks: computeBlocks(pts, s.curveWidth),
-    }
+    const gridBlocks = computeBlocks(pts, s.curveWidth)
+    const next: Partial<AppState> = { points: pts, gridBlocks }
+    const pruned = pruneHighlights(gridBlocks, s.highlightedBlocks)
+    if (pruned !== s.highlightedBlocks) next.highlightedBlocks = pruned
     if (recordHistory) {
       next.undoStack = [...s.undoStack, clonePoints(pts)].slice(-MAX_HISTORY)
       next.redoStack = [] // any fresh edit invalidates the redo branch
@@ -181,14 +198,28 @@ export const store = createStore<AppState>((set, get) => {
     //     only name the keys that change. ---
     // Width changes the rasterized blocks, so recompute (but it's not a
     // geometry edit, so no history entry).
-    setCurveWidth: (curveWidth) =>
-      set({ curveWidth, gridBlocks: computeBlocks(get().points, curveWidth) }),
+    setCurveWidth: (curveWidth) => {
+      const gridBlocks = computeBlocks(get().points, curveWidth)
+      set({ curveWidth, gridBlocks, highlightedBlocks: pruneHighlights(gridBlocks, get().highlightedBlocks) })
+    },
     setZoom: (zoom) => set({ zoom }),
     setViewOffset: (viewOffset) => set({ viewOffset }),
-    toggleBuildMode: () => set((s) => ({ isBuildMode: !s.isBuildMode })),
+    // Entering build mode locks editing, so drop any selection.
+    toggleBuildMode: () => set((s) => ({ isBuildMode: !s.isBuildMode, selectedIndex: null })),
     toggleTangents: () => set((s) => ({ showTangents: !s.showTangents })),
 
     select: (selectedIndex) => set({ selectedIndex }),
+
+    toggleHighlight: (key) =>
+      set((s) => {
+        if (!s.gridBlocks.has(key)) return {} // only blocks on the track can be placed
+        const next = new Set(s.highlightedBlocks)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return { highlightedBlocks: next }
+      }),
+    clearHighlights: () =>
+      set((s) => (s.highlightedBlocks.size === 0 ? {} : { highlightedBlocks: new Set() })),
 
     // --- geometry edits ---
 

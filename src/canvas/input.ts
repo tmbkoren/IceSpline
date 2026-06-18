@@ -72,6 +72,10 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     }
   }
 
+  // Build-mode: where a left/touch press started, for click-to-toggle a block's
+  // "placed" highlight (toggle on release only if it wasn't a drag/pan).
+  let buildTapStart: { x: number; y: number } | null = null
+
   // --- Helpers -----------------------------------------------------------
 
   type Hit =
@@ -180,10 +184,62 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     }
   }
 
+  // One pinch step (scale + pan together), shared by the design and build move
+  // handlers. Anchors the grid point under the previous midpoint to the current
+  // midpoint at the new zoom; degrades to a pure pan at the zoom clamp.
+  const applyPinch = () => {
+    if (!pinchPrev) return
+    const cur = pinchOf([...active.values()])
+    const scale = cur.dist / pinchPrev.dist
+    const { zoom, viewOffset, setZoom, setViewOffset } = store.getState()
+    const newZoom = clamp(zoom * scale, MIN_ZOOM, MAX_ZOOM)
+    const gx = pinchPrev.midX / zoom + viewOffset.x
+    const gy = pinchPrev.midY / zoom + viewOffset.y
+    setZoom(newZoom)
+    setViewOffset({ x: gx - cur.midX / newZoom, y: gy - cur.midY / newZoom })
+    pinchPrev = cur
+  }
+
+  // Build mode: toggle the "placed" highlight of the block under a screen point,
+  // if that block is part of the track.
+  const toggleHighlightAt = (sx: number, sy: number) => {
+    const { zoom, viewOffset, gridBlocks } = store.getState()
+    const g = screenToGrid(sx, sy, zoom, viewOffset)
+    const key = `${Math.floor(g.x)},${Math.floor(g.y)}`
+    if (gridBlocks.has(key)) store.getState().toggleHighlight(key)
+  }
+
   // --- Pointer handlers --------------------------------------------------
 
   const onPointerDown = (e: PointerEvent) => {
     const p = pos(e)
+
+    if (store.getState().isBuildMode) {
+      // Build mode: curve editing is locked. Left-click / one-finger tap toggles
+      // a block's "placed" highlight; right-drag / pinch still navigate.
+      if (e.pointerType === 'mouse') {
+        if (e.button === 2) {
+          panLast = p
+          canvas.setPointerCapture(e.pointerId)
+        } else if (e.button === 0) {
+          buildTapStart = p
+          canvas.setPointerCapture(e.pointerId)
+        }
+        return
+      }
+      canvas.setPointerCapture(e.pointerId)
+      active.set(e.pointerId, p)
+      if (active.size === 1) {
+        buildTapStart = p
+        panLast = p
+        pinchPrev = null
+      } else if (active.size === 2) {
+        buildTapStart = null
+        panLast = null
+        pinchPrev = pinchOf([...active.values()])
+      }
+      return
+    }
 
     if (e.pointerType === 'mouse') {
       if (e.button === 2) {
@@ -263,6 +319,37 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
   const onPointerMove = (e: PointerEvent) => {
     const p = pos(e)
 
+    if (store.getState().isBuildMode) {
+      if (e.pointerType === 'mouse') {
+        if (panLast) {
+          pan(p.x - panLast.x, p.y - panLast.y)
+          panLast = p
+        }
+        if (buildTapStart) {
+          const dx = p.x - buildTapStart.x
+          const dy = p.y - buildTapStart.y
+          if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) buildTapStart = null
+        }
+        return
+      }
+      if (!active.has(e.pointerId)) return
+      active.set(e.pointerId, p)
+      if (pinchPrev && active.size >= 2) {
+        applyPinch()
+      } else if (active.size === 1) {
+        if (buildTapStart) {
+          const dx = p.x - buildTapStart.x
+          const dy = p.y - buildTapStart.y
+          if (dx * dx + dy * dy > TAP_TOLERANCE_PX * TAP_TOLERANCE_PX) buildTapStart = null
+        }
+        if (panLast) {
+          pan(p.x - panLast.x, p.y - panLast.y)
+          panLast = p
+        }
+      }
+      return
+    }
+
     if (e.pointerType === 'mouse') {
       if (editing?.kind === 'anchor') {
         // Drag the grabbed anchor. Shift = fix tangents in world space.
@@ -290,19 +377,8 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     active.set(e.pointerId, p)
 
     if (pinchPrev && active.size >= 2) {
-      // Two-finger pinch: ONE step that both scales and pans. Anchor the grid
-      // point that was under the PREVIOUS midpoint, and place it under the
-      // CURRENT midpoint at the new zoom — this is pan + zoom combined, and it
-      // degrades to a pure pan when the zoom hits its clamp.
-      const cur = pinchOf([...active.values()])
-      const scale = cur.dist / pinchPrev.dist
-      const { zoom, viewOffset, setZoom, setViewOffset } = store.getState()
-      const newZoom = clamp(zoom * scale, MIN_ZOOM, MAX_ZOOM)
-      const gx = pinchPrev.midX / zoom + viewOffset.x
-      const gy = pinchPrev.midY / zoom + viewOffset.y
-      setZoom(newZoom)
-      setViewOffset({ x: gx - cur.midX / newZoom, y: gy - cur.midY / newZoom })
-      pinchPrev = cur
+      // Two-finger pinch: ONE step that both scales and pans (see applyPinch).
+      applyPinch()
     } else if (active.size === 1) {
       // Any meaningful movement cancels a pending long-press delete.
       if (pressStart) {
@@ -324,6 +400,29 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
   }
 
   const onPointerUp = (e: PointerEvent) => {
+    if (store.getState().isBuildMode) {
+      canvas.releasePointerCapture(e.pointerId)
+      const p = pos(e)
+      const toggleIfTap = (tol: number) => {
+        if (!buildTapStart) return
+        const dx = p.x - buildTapStart.x
+        const dy = p.y - buildTapStart.y
+        if (dx * dx + dy * dy <= tol * tol) toggleHighlightAt(buildTapStart.x, buildTapStart.y)
+        buildTapStart = null
+      }
+      if (e.pointerType === 'mouse') {
+        toggleIfTap(DRAG_THRESHOLD_PX)
+        panLast = null
+        return
+      }
+      active.delete(e.pointerId)
+      if (active.size === 0) toggleIfTap(TAP_TOLERANCE_PX)
+      if (active.size < 2) pinchPrev = null
+      if (active.size === 1) panLast = [...active.values()][0]
+      else if (active.size === 0) panLast = null
+      return
+    }
+
     canvas.releasePointerCapture(e.pointerId)
 
     if (e.pointerType === 'mouse') {
@@ -408,22 +507,16 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
 
     const s = store.getState()
 
-    // Undo/redo: Ctrl+Z (or Cmd+Z), Ctrl+Y, and Ctrl/Cmd+Shift+Z for the Mac
-    // habit. preventDefault so the browser's own undo doesn't also fire.
     if (e.ctrlKey || e.metaKey) {
       const k = e.key.toLowerCase()
-      if (k === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) s.redo()
-        else s.undo()
-      } else if (k === 'y') {
-        e.preventDefault()
-        s.redo()
-      } else if (k === 's') {
+      // File ops work in both modes.
+      if (k === 's') {
         // Export .mtrack (stop the browser's "save page" dialog).
         e.preventDefault()
         downloadMtrack(s.points)
-      } else if (k === 'o') {
+        return
+      }
+      if (k === 'o') {
         // Import .mtrack (stop the browser's "open file" dialog).
         e.preventDefault()
         openMtrackDialog()
@@ -431,7 +524,26 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
             if (points) store.getState().loadTrack(points)
           })
           .catch((err: Error) => window.alert(`Couldn't import .mtrack: ${err.message}`))
+        return
       }
+      // Undo/redo are curve edits — locked in build mode. Ctrl+Z / Ctrl+Y, and
+      // Ctrl/Cmd+Shift+Z for the Mac habit. preventDefault so the browser's own
+      // undo doesn't also fire.
+      if (s.isBuildMode) return
+      if (k === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) s.redo()
+        else s.undo()
+      } else if (k === 'y') {
+        e.preventDefault()
+        s.redo()
+      }
+      return
+    }
+
+    // Build mode locks curve editing — only Reset Highlight (R) is live.
+    if (s.isBuildMode) {
+      if (e.key.toLowerCase() === 'r') s.clearHighlights()
       return
     }
 

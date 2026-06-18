@@ -52,6 +52,13 @@ export function ControlPanel() {
   const isBuildMode = useStore((s) => s.isBuildMode)
   const toggleBuildMode = useStore((s) => s.toggleBuildMode)
 
+  // Counts. Selecting `.size` (a number) means this re-renders only when the
+  // count actually changes — not on every drag frame, and never reads `points`
+  // (CLAUDE rule 2). gridBlocks is derived; highlights only change on user taps.
+  const blockCount = useStore((s) => s.gridBlocks.size)
+  const placedCount = useStore((s) => s.highlightedBlocks.size)
+  const clearHighlights = useStore((s) => s.clearHighlights)
+
   return (
     <>
       <aside className={`drawer${open ? ' drawer--open' : ''}`}>
@@ -73,10 +80,15 @@ export function ControlPanel() {
         <header className="title-block">
           <h1 className="wordmark">ICESPLINE</h1>
           <p className="subtitle">ICE-ROAD PATH PLANNER</p>
-          {/* Live readout — the title block reflects real state, not decoration. */}
+          {/* Live readouts — the title block reflects real state, not decoration. */}
           <div className="readout">SCALE — {zoomLabel} PX / BLK</div>
+          <div className="readout">{blockCount.toLocaleString()} BLOCKS</div>
+          {isBuildMode && (
+            <div className="readout">{placedCount.toLocaleString()} PLACED</div>
+          )}
         </header>
 
+        {/* Width + tangents are curve settings — disabled in build mode (SPEC). */}
         <label className="field">
           <span className="field__label">
             WIDTH <b>{curveWidth}</b>
@@ -87,6 +99,7 @@ export function ControlPanel() {
             max={64}
             step={1}
             value={curveWidth}
+            disabled={isBuildMode}
             // e.target.value is always a string from the DOM, so Number() it.
             onChange={(e) => setCurveWidth(Number(e.target.value))}
           />
@@ -107,7 +120,12 @@ export function ControlPanel() {
         </label>
 
         <label className="field field--row">
-          <input type="checkbox" checked={showTangents} onChange={toggleTangents} />
+          <input
+            type="checkbox"
+            checked={showTangents}
+            onChange={toggleTangents}
+            disabled={isBuildMode}
+          />
           <span className="field__label">SHOW TANGENTS</span>
         </label>
 
@@ -118,6 +136,13 @@ export function ControlPanel() {
         >
           {isBuildMode ? 'Exit build mode' : 'Enter build mode'}
         </button>
+
+        {/* Build-mode-only: clear all "placed" highlights (also the R key). */}
+        {isBuildMode && (
+          <button type="button" className="btn" onClick={clearHighlights}>
+            Reset highlight
+          </button>
+        )}
 
         {/* Reads points via getState() in the handler — NOT a subscription, so
             this stays off the canvas render path (CLAUDE rule 2). */}
