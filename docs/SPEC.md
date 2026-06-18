@@ -129,13 +129,27 @@ coordinates the track occupies — either for the whole track or for one segment
 1. Absolute handle positions: `p1_abs = p0.pos + p0.out_tangent`,
    `p2_abs = p1.pos + p1.in_tangent` (tangents are relative offsets from `pos`).
 2. Sample the cubic Bézier at `max(20, floor(chord_length / 2))` steps, where
-   `chord_length = |p0.pos→p1_abs| + |p1_abs→p2_abs| + |p2_abs→p1.pos|`.
-3. For each sample point, collect every integer grid cell `(x, y)` whose center
-   `(x + 0.5, y + 0.5)` is within `width / 2.0` of the sample. Iterate the cells
-   in the bounding box `floor(px - r) .. ceil(px + r)` and distance-test each.
+   `chord_length = |p0.pos→p1_abs| + |p1_abs→p2_abs| + |p2_abs→p1.pos|`. This
+   yields `steps + 1` sample points — treat them as a **polyline**.
+3. For each consecutive pair of samples, stamp the **capsule** between them:
+   collect every integer grid cell `(x, y)` whose center `(x + 0.5, y + 0.5)` is
+   within `width / 2.0` of the line *segment* (distance-to-segment, with the
+   projection parameter clamped to `[0, 1]`). Iterate the cells in the segment's
+   bounding box expanded by `r` and distance-test each.
 4. Deduplicate within the segment.
 
 The full-track result is the union of all segments' sets (deduplicated).
+
+> **Why capsules, not per-sample disks.** Stamping a filled disk at each *sample
+> point* leaves the strip incomplete: near the strip edge (perpendicular distance
+> ≈ `r`) the union of disks sags inward between samples, dropping 1-block holes on
+> the sides of long, slightly-diagonal runs — no finite sample spacing fixes it.
+> The union of per-interval **capsules** is exactly the set of cells within `r` of
+> the polyline, so there are no gaps. Use squared distances throughout (no
+> `hypot`/`sqrt` in the test) and keep the projection/clamp/dot-product order
+> identical in `blocks.ts` and `curve.cpp` so the differential test stays
+> bit-exact. (Cost: overlapping per-interval bounding boxes re-test shared cells —
+> addressed by the performance milestone's per-segment caching, not here.)
 
 ### Block coordinate convention
 A grid point maps to a block with **`floor`**, never truncation:

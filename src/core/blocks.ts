@@ -88,10 +88,19 @@ function addSegmentBlocks(
   const r = width / 2.0
   const r2 = r * r
 
-  // 3) Walk the curve at steps+1 sample points (t = 0 .. 1 inclusive). For each
-  //    sample, stamp every grid cell whose CENTER (x+0.5, y+0.5) lies within r
-  //    of the sample. Dedup is free — `out` is a Set.
-  for (let i = 0; i <= steps; i++) {
+  // 3) Walk the curve as a POLYLINE of steps+1 sample points, and stamp the
+  //    CAPSULE between each consecutive pair — i.e. every grid cell whose center
+  //    is within r of the line *segment*, not just of the sample points.
+  //
+  //    Why a capsule, not a per-sample disk: the union of disks sags inward
+  //    between samples near the strip edge (perpendicular distance ≈ r), so cells
+  //    there fall through the gaps — visible as 1-block holes on the sides of
+  //    long, slightly-diagonal runs. Distance-to-segment closes those gaps
+  //    exactly: the union of per-interval capsules is precisely the set of cells
+  //    within r of the polyline. (B(0) == c0 exactly, so we seed prev from c0.)
+  let prevX = c0x
+  let prevY = c0y
+  for (let i = 1; i <= steps; i++) {
     const t = i / steps
     const u = 1 - t
 
@@ -104,18 +113,46 @@ function addSegmentBlocks(
     const px = b0 * c0x + b1 * c1x + b2 * c2x + b3 * c3x
     const py = b0 * c0y + b1 * c1y + b2 * c2y + b3 * c3y
 
-    // Only the cells in the sample's bounding box can be within r; test each.
-    const minX = Math.floor(px - r)
-    const maxX = Math.ceil(px + r)
-    const minY = Math.floor(py - r)
-    const maxY = Math.ceil(py + r)
-    for (let x = minX; x <= maxX; x++) {
-      for (let y = minY; y <= maxY; y++) {
-        const dx = x + 0.5 - px
-        const dy = y + 0.5 - py
-        if (dx * dx + dy * dy <= r2) {
-          out.add(`${x},${y}`)
-        }
+    stampCapsule(prevX, prevY, px, py, r, r2, out)
+    prevX = px
+    prevY = py
+  }
+}
+
+/**
+ * Stamp every grid cell whose center (x+0.5, y+0.5) lies within `r` of the line
+ * segment A=(ax,ay) -> B=(bx,by). Squared distances throughout (no sqrt), and the
+ * projection/clamp/dot-product order is fixed so the C++ port matches bit-for-bit.
+ */
+function stampCapsule(
+  ax: number, ay: number, bx: number, by: number, r: number, r2: number, out: Set<string>,
+): void {
+  // Cells outside the segment's bbox (expanded by r) can't be within r.
+  const minX = Math.floor(Math.min(ax, bx) - r)
+  const maxX = Math.ceil(Math.max(ax, bx) + r)
+  const minY = Math.floor(Math.min(ay, by) - r)
+  const maxY = Math.ceil(Math.max(ay, by) + r)
+
+  const abx = bx - ax
+  const aby = by - ay
+  const abLen2 = abx * abx + aby * aby
+
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      const cxp = x + 0.5
+      const cyp = y + 0.5
+      // Project the cell center onto the segment, clamped to [0,1].
+      const apx = cxp - ax
+      const apy = cyp - ay
+      let tt = abLen2 > 0 ? (apx * abx + apy * aby) / abLen2 : 0
+      if (tt < 0) tt = 0
+      else if (tt > 1) tt = 1
+      const qx = ax + tt * abx
+      const qy = ay + tt * aby
+      const dx = cxp - qx
+      const dy = cyp - qy
+      if (dx * dx + dy * dy <= r2) {
+        out.add(`${x},${y}`)
       }
     }
   }

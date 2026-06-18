@@ -11,6 +11,7 @@
 import { createStore } from 'zustand/vanilla'
 import { useStore as useZustand } from 'zustand'
 import { computeBlocks } from './blocks'
+import { getViewport } from './viewport'
 
 // Undo history cap (SPEC: 50 states). Older snapshots fall off the front.
 const MAX_HISTORY = 50
@@ -96,6 +97,8 @@ export interface AppState {
   deletePoint: (index: number) => void
   clearPoints: () => void
   toggleMirror: (index: number) => void
+  // Replace the whole track (e.g. .mtrack import); records history so it's undoable.
+  loadTrack: (points: ControlPoint[]) => void
 
   // --- history ---
   // commitEdit closes a drag: push a snapshot iff the points actually changed.
@@ -359,6 +362,47 @@ export const store = createStore<AppState>((set, get) => {
     clearPoints: () => {
       set({ selectedIndex: null })
       setPoints([], true)
+    },
+
+    loadTrack: (points) => {
+      const cloned = clonePoints(points)
+      set({ selectedIndex: null })
+      setPoints(cloned, true)
+      // Fit the whole track to the screen so an imported track is fully visible —
+      // the camera may have been parked far from where this track lives.
+      const { width: vpW, height: vpH } = getViewport()
+      if (cloned.length === 0 || vpW <= 0 || vpH <= 0) return
+
+      // Bounding box over anchors AND tangent-handle tips (the curve can bulge out
+      // to the handles), in grid units.
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const p of cloned) {
+        for (const x of [p.pos.x, p.pos.x + p.inTangent.x, p.pos.x + p.outTangent.x]) {
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+        }
+        for (const y of [p.pos.y, p.pos.y + p.inTangent.y, p.pos.y + p.outTangent.y]) {
+          if (y < minY) minY = y
+          if (y > maxY) maxY = y
+        }
+      }
+
+      const PADDING = 0.85 // leave a margin around the track
+      const MIN_ZOOM = 2 // matches input.ts / the SPEC zoom slider (2–40 px/block)
+      const MAX_ZOOM = 40
+      const spanX = maxX - minX
+      const spanY = maxY - minY
+      // Zoom to fit the tighter axis; a zero span (single point / axis-aligned
+      // line) doesn't constrain zoom, so leave that axis out (avoid /0).
+      const fitX = spanX > 0 ? (vpW * PADDING) / spanX : Infinity
+      const fitY = spanY > 0 ? (vpH * PADDING) / spanY : Infinity
+      const fit = Math.min(fitX, fitY)
+      const zoom = fit === Infinity ? get().zoom : Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fit))
+
+      // Center the bounding box: viewOffset is the grid coord at screen (0,0).
+      const cx = (minX + maxX) / 2
+      const cy = (minY + maxY) / 2
+      set({ zoom, viewOffset: { x: cx - vpW / 2 / zoom, y: cy - vpH / 2 / zoom } })
     },
 
     toggleMirror: (index) => {

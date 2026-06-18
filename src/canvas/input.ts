@@ -12,6 +12,7 @@
 // none` on the canvas (index.css) stops the browser from hijacking drags/pinch.
 
 import { store } from '../core/state'
+import { downloadMtrack, openMtrackDialog } from '../core/mtrack'
 import { gridToScreen, screenToGrid } from './transform'
 
 // Camera limits (SPEC: zoom slider 2-40 px/block).
@@ -418,6 +419,18 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
       } else if (k === 'y') {
         e.preventDefault()
         s.redo()
+      } else if (k === 's') {
+        // Export .mtrack (stop the browser's "save page" dialog).
+        e.preventDefault()
+        downloadMtrack(s.points)
+      } else if (k === 'o') {
+        // Import .mtrack (stop the browser's "open file" dialog).
+        e.preventDefault()
+        openMtrackDialog()
+          .then((points) => {
+            if (points) store.getState().loadTrack(points)
+          })
+          .catch((err: Error) => window.alert(`Couldn't import .mtrack: ${err.message}`))
       }
       return
     }

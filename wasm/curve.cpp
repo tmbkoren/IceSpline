@@ -25,6 +25,41 @@ static double dist(double ax, double ay, double bx, double by) {
   return std::sqrt(dx * dx + dy * dy);
 }
 
+// Stamp every grid cell whose center (x+0.5, y+0.5) is within r of the line
+// segment A->B (a "capsule"). Mirrors blocks.ts stampCapsule op-for-op:
+// squared distances, fixed projection/clamp/dot-product order.
+static void stamp_capsule(double ax, double ay, double bx, double by,
+                          double r, double r2, std::unordered_set<int64_t>& cells) {
+  int minX = (int)std::floor((ax < bx ? ax : bx) - r);
+  int maxX = (int)std::ceil((ax > bx ? ax : bx) + r);
+  int minY = (int)std::floor((ay < by ? ay : by) - r);
+  int maxY = (int)std::ceil((ay > by ? ay : by) + r);
+
+  double abx = bx - ax;
+  double aby = by - ay;
+  double abLen2 = abx * abx + aby * aby;
+
+  for (int x = minX; x <= maxX; x++) {
+    for (int y = minY; y <= maxY; y++) {
+      double cxp = x + 0.5;
+      double cyp = y + 0.5;
+      double apx = cxp - ax;
+      double apy = cyp - ay;
+      double tt = abLen2 > 0 ? (apx * abx + apy * aby) / abLen2 : 0.0;
+      if (tt < 0) tt = 0;
+      else if (tt > 1) tt = 1;
+      double qx = ax + tt * abx;
+      double qy = ay + tt * aby;
+      double dx = cxp - qx;
+      double dy = cyp - qy;
+      if (dx * dx + dy * dy <= r2) {
+        int64_t key = ((int64_t)x << 32) ^ (uint32_t)y;
+        cells.insert(key);
+      }
+    }
+  }
+}
+
 // Rasterize one segment [seg, seg+1] into `cells`, deduped by a packed 64-bit
 // key (SPEC: key = ((int64_t)x << 32) ^ (uint32_t)y). The set across segments
 // gives the whole-track union for free.
@@ -49,7 +84,12 @@ static void rasterize_segment(const double* points, int seg, double width,
   double r = width / 2.0;
   double r2 = r * r;
 
-  for (int i = 0; i <= steps; i++) {
+  // Walk the curve as a polyline and stamp the capsule between consecutive
+  // samples (distance-to-segment, not per-sample disks) so the strip edges have
+  // no inter-sample holes. B(0) == c0 exactly, so seed prev from c0.
+  double prevX = c0x;
+  double prevY = c0y;
+  for (int i = 1; i <= steps; i++) {
     double t = (double)i / (double)steps; // cast both: C++ int/int would truncate
     double u = 1.0 - t;
 
@@ -61,20 +101,9 @@ static void rasterize_segment(const double* points, int seg, double width,
     double px = b0 * c0x + b1 * c1x + b2 * c2x + b3 * c3x;
     double py = b0 * c0y + b1 * c1y + b2 * c2y + b3 * c3y;
 
-    int minX = (int)std::floor(px - r);
-    int maxX = (int)std::ceil(px + r);
-    int minY = (int)std::floor(py - r);
-    int maxY = (int)std::ceil(py + r);
-    for (int x = minX; x <= maxX; x++) {
-      for (int y = minY; y <= maxY; y++) {
-        double dx = x + 0.5 - px;
-        double dy = y + 0.5 - py;
-        if (dx * dx + dy * dy <= r2) {
-          int64_t key = ((int64_t)x << 32) ^ (uint32_t)y;
-          cells.insert(key);
-        }
-      }
-    }
+    stamp_capsule(prevX, prevY, px, py, r, r2, cells);
+    prevX = px;
+    prevY = py;
   }
 }
 

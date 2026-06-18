@@ -42,6 +42,50 @@ describe('computeBlocks', () => {
     }
   })
 
+  it('fills a slightly-diagonal straight run with no edge holes', () => {
+    // Regression for the disk-union sag: long, gently-diagonal straight segments
+    // used to drop 1-block holes on their sides. We verify against an INDEPENDENT
+    // oracle — brute-force distance to the full segment — not the differential
+    // test (which only proves WASM≡TS). A margin around r dodges ULP differences
+    // between the implementation's per-interval accumulation and this full-segment
+    // distance: cells comfortably inside (≤ r−ε) MUST be covered (no holes); cells
+    // covered must be within (≤ r+ε) (no spill). The razor-thin (r−ε, r+ε) band is
+    // exempt — that's where the boundary ambiguity lives, not where holes are.
+    const ax = 0, ay = 0, bx = 80, by = 9 // ~6.4° off horizontal
+    const width = 5
+    const r = width / 2
+    const eps = 1e-3
+    const rIn2 = (r - eps) * (r - eps)
+    const rOut2 = (r + eps) * (r + eps)
+
+    const distToSeg2 = (px: number, py: number): number => {
+      const abx = bx - ax, aby = by - ay
+      const abLen2 = abx * abx + aby * aby
+      let t = abLen2 > 0 ? ((px - ax) * abx + (py - ay) * aby) / abLen2 : 0
+      if (t < 0) t = 0
+      else if (t > 1) t = 1
+      const qx = ax + t * abx, qy = ay + t * aby
+      const dx = px - qx, dy = py - qy
+      return dx * dx + dy * dy
+    }
+
+    const blocks = computeBlocks([cp(ax, ay), cp(bx, by)], width)
+
+    // Completeness: no holes inside the strip.
+    for (let x = Math.floor(ax - r) - 2; x <= Math.ceil(bx + r) + 2; x++) {
+      for (let y = Math.floor(ay - r) - 2; y <= Math.ceil(by + r) + 2; y++) {
+        if (distToSeg2(x + 0.5, y + 0.5) <= rIn2) {
+          expect(blocks.has(`${x},${y}`)).toBe(true)
+        }
+      }
+    }
+    // Soundness: nothing stamped outside the strip.
+    for (const key of blocks) {
+      const [x, y] = key.split(',').map(Number)
+      expect(distToSeg2(x + 0.5, y + 0.5)).toBeLessThanOrEqual(rOut2)
+    }
+  })
+
   it('returns an empty set for fewer than two control points', () => {
     expect(computeBlocks([], 4).size).toBe(0)
     expect(computeBlocks([cp(0, 0)], 4).size).toBe(0)

@@ -9,6 +9,7 @@
 import { useEffect, useRef } from 'react'
 import { startRenderLoop } from './renderer'
 import { attachInput } from './input'
+import { setViewport } from '../core/viewport'
 
 export function CanvasView() {
   // A ref is a stable "box" that holds a value across renders without causing
@@ -32,6 +33,8 @@ export function CanvasView() {
     const resize = () => {
       canvas.width = canvas.clientWidth
       canvas.height = canvas.clientHeight
+      // Publish the size so camera math (e.g. centering on import) can use it.
+      setViewport(canvas.width, canvas.height)
     }
     resize()
     window.addEventListener('resize', resize) // keep buffer matched on window resize

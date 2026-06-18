@@ -11,8 +11,20 @@
 // canvas drags points 60x/second.
 
 import { useState } from 'react'
-import { useStore } from '../core/state'
+import { store, useStore } from '../core/state'
+import { downloadMtrack, openMtrackDialog } from '../core/mtrack'
 import { ControlsDialog } from './ControlsDialog'
+
+// Open a .mtrack and load it into the store. Shared shape with the Ctrl+O path in
+// input.ts; kept tiny rather than abstracted into the store (file dialogs are app
+// glue, not state). A dismissed picker resolves null (no-op); a bad file alerts.
+function importTrack() {
+  openMtrackDialog()
+    .then((points) => {
+      if (points) store.getState().loadTrack(points)
+    })
+    .catch((err: Error) => window.alert(`Couldn't import .mtrack: ${err.message}`))
+}
 
 export function ControlPanel() {
   // Drawer open/closed is pure chrome state — it doesn't affect canvas geometry,
@@ -105,6 +117,20 @@ export function ControlPanel() {
           onClick={toggleBuildMode}
         >
           {isBuildMode ? 'Exit build mode' : 'Enter build mode'}
+        </button>
+
+        {/* Reads points via getState() in the handler — NOT a subscription, so
+            this stays off the canvas render path (CLAUDE rule 2). */}
+        <button
+          type="button"
+          className="btn"
+          onClick={() => downloadMtrack(store.getState().points)}
+        >
+          Export .mtrack
+        </button>
+
+        <button type="button" className="btn" onClick={importTrack}>
+          Import .mtrack
         </button>
 
         <button type="button" className="btn" onClick={() => setHelpOpen(true)}>

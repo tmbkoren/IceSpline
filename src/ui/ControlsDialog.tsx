@@ -40,6 +40,8 @@ const GROUPS: Group[] = [
       { action: 'Clear all points', keys: ['C'] },
       { action: 'Undo', keys: ['Ctrl', 'Z'] },
       { action: 'Redo', keys: ['Ctrl', 'Y'] },
+      { action: 'Export .mtrack', keys: ['Ctrl', 'S'] },
+      { action: 'Import .mtrack', keys: ['Ctrl', 'O'] },
     ],
   },
   {
