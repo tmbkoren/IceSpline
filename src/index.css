@@ -236,6 +236,84 @@ input[type="range"]::-moz-range-thumb {
   color: var(--line);
 }
 
+/* --- Floating action dock ------------------------------------------------ */
+
+.dock {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* The expanded action stack sits above the toggle. */
+.dock__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  animation: dock-rise 0.14s ease;
+}
+.dock__btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: right;
+  padding: 9px 12px;
+  min-width: 116px;
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--line-dim);
+  cursor: pointer;
+}
+.dock__btn:hover:not(:disabled) {
+  border-color: var(--line);
+  color: var(--line);
+}
+.dock__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.dock__btn--warn:hover {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+/* The always-visible round toggle (the collapsed state). */
+.dock__toggle {
+  align-self: flex-end;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--line);
+  color: var(--bg);
+  border: none;
+  font-family: var(--mono);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+}
+.dock__toggle--open {
+  background: var(--bg-panel);
+  color: var(--line);
+  border: 1px solid var(--line);
+  font-size: 16px;
+}
+
+@keyframes dock-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
 /* --- Controls dialog (modal) -------------------------------------------- */
 
 .modal-backdrop {
@@ -359,6 +437,9 @@ kbd {
     transition: none;
   }
   .modal-backdrop {
+    animation: none;
+  }
+  .dock__actions {
     animation: none;
   }
 }

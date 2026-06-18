@@ -26,5 +26,5 @@ npm run dev
 
 ## Stack
 
-React 18 · TypeScript · Vite · Zustand · Canvas 2D · C++/Emscripten WASM ·
+React 19 · TypeScript · Vite · Zustand · Canvas 2D · C++/Emscripten WASM ·
 Vitest · GitHub Pages
