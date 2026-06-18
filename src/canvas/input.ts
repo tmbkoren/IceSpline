@@ -23,6 +23,11 @@ const HIT_RADIUS_PX = 8
 // Movement (screen px) below which a left press+release counts as a click, not a
 // drag — so a click on empty space adds a point, but a stray drag doesn't.
 const DRAG_THRESHOLD_PX = 4
+// Fingers are less precise than a mouse, so touch uses a looser tap tolerance
+// (also the distance a finger may wander before a long-press is cancelled).
+const TAP_TOLERANCE_PX = 10
+// Hold a point this long (ms) without moving to delete it on touch.
+const LONG_PRESS_MS = 500
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
@@ -54,6 +59,17 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     | { kind: 'handle'; index: number; which: 'in' | 'out' }
     | { kind: 'empty'; downX: number; downY: number }
     | null = null
+
+  // Touch-only: the position the active finger went down at (tap detection +
+  // long-press cancel) and the pending long-press-to-delete timer.
+  let pressStart: { x: number; y: number } | null = null
+  let longPressTimer: number | null = null
+  const clearLongPress = () => {
+    if (longPressTimer !== null) {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+    }
+  }
 
   // --- Helpers -----------------------------------------------------------
 
@@ -209,11 +225,34 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     active.set(e.pointerId, p)
 
     if (active.size === 1) {
-      // One finger -> pan.
-      panLast = p
+      // One finger: same hit-test as the mouse left button. A point/handle starts
+      // a move, the curve inserts, empty space arms a tap-to-add and lets a drag
+      // pan. Holding still on a point deletes it (long-press).
+      pressStart = p
+      const hit = hitTest(p)
+      if (hit?.kind === 'anchor') {
+        store.getState().select(hit.index)
+        editing = { kind: 'anchor', index: hit.index }
+        longPressTimer = window.setTimeout(() => {
+          store.getState().deletePoint(hit.index)
+          editing = null
+          longPressTimer = null
+        }, LONG_PRESS_MS)
+      } else if (hit?.kind === 'handle') {
+        store.getState().select(hit.index)
+        editing = { kind: 'handle', index: hit.index, which: hit.which }
+      } else if (hit?.kind === 'curve') {
+        store.getState().insertPoint(hit.index, hit.t)
+        editing = { kind: 'anchor', index: hit.index + 1 }
+      } else {
+        editing = { kind: 'empty', downX: p.x, downY: p.y }
+        panLast = p // empty one-finger drag pans
+      }
       pinchPrev = null
     } else if (active.size === 2) {
-      // Second finger down -> switch from pan to pinch.
+      // Second finger down -> abandon any one-finger edit and switch to pinch.
+      clearLongPress()
+      editing = null
       panLast = null
       pinchPrev = pinchOf([...active.values()])
     }
@@ -263,9 +302,23 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
       setZoom(newZoom)
       setViewOffset({ x: gx - cur.midX / newZoom, y: gy - cur.midY / newZoom })
       pinchPrev = cur
-    } else if (panLast && active.size === 1) {
-      pan(p.x - panLast.x, p.y - panLast.y)
-      panLast = p
+    } else if (active.size === 1) {
+      // Any meaningful movement cancels a pending long-press delete.
+      if (pressStart) {
+        const mx = p.x - pressStart.x
+        const my = p.y - pressStart.y
+        if (mx * mx + my * my > TAP_TOLERANCE_PX * TAP_TOLERANCE_PX) clearLongPress()
+      }
+      const { zoom, viewOffset } = store.getState()
+      if (editing?.kind === 'anchor') {
+        // No Shift on touch, so tangents are never fixed here.
+        store.getState().movePoint(editing.index, screenToGrid(p.x, p.y, zoom, viewOffset), false)
+      } else if (editing?.kind === 'handle') {
+        store.getState().moveTangent(editing.index, editing.which, screenToGrid(p.x, p.y, zoom, viewOffset))
+      } else if (panLast) {
+        pan(p.x - panLast.x, p.y - panLast.y)
+        panLast = p
+      }
     }
   }
 
@@ -292,7 +345,28 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
       return
     }
 
+    clearLongPress()
+    const p = pos(e)
     active.delete(e.pointerId)
+
+    // The last finger lifting ends a one-finger edit: commit a move, or add a
+    // point if it was a tap on empty space (not a pan). (After a pinch, `editing`
+    // was already cleared, so neither fires.)
+    if (active.size === 0) {
+      if (editing?.kind === 'anchor' || editing?.kind === 'handle') {
+        store.getState().commitEdit()
+        editing = null
+      } else if (editing?.kind === 'empty') {
+        const dx = p.x - editing.downX
+        const dy = p.y - editing.downY
+        if (dx * dx + dy * dy <= TAP_TOLERANCE_PX * TAP_TOLERANCE_PX) {
+          const { zoom, viewOffset } = store.getState()
+          store.getState().addPoint(screenToGrid(editing.downX, editing.downY, zoom, viewOffset))
+        }
+        editing = null
+      }
+      pressStart = null
+    }
 
     if (active.size < 2) pinchPrev = null
     if (active.size === 1) {

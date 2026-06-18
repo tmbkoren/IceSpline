@@ -236,9 +236,129 @@ input[type="range"]::-moz-range-thumb {
   color: var(--line);
 }
 
+/* --- Controls dialog (modal) -------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(5, 12, 20, 0.72);
+  animation: modal-fade 0.14s ease;
+}
+.modal {
+  position: relative;
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-dim);
+  padding: 20px 20px 22px;
+}
+/* Corner registration marks, echoing the title block's drafting motif. */
+.modal::before,
+.modal::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  opacity: 0.6;
+  background:
+    linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat,
+    linear-gradient(var(--line), var(--line)) center / 1px 100% no-repeat;
+}
+.modal::before {
+  top: -4px;
+  left: -4px;
+}
+.modal::after {
+  bottom: -4px;
+  right: -4px;
+}
+
+.modal__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line-dim);
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+}
+.modal__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--text);
+}
+.modal__close {
+  background: transparent;
+  border: 1px solid var(--line-dim);
+  color: var(--text-mut);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+}
+.modal__close:hover {
+  border-color: var(--line);
+  color: var(--line);
+}
+
+.modal__group {
+  margin-top: 16px;
+}
+.modal__group-title {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--line);
+  margin: 0 0 8px;
+}
+/* Each control row: action label on the left, the key/gesture chip on the right. */
+.shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line-faint);
+  font-size: 11px;
+}
+.shortcut__action {
+  color: var(--text-mut);
+}
+.shortcut__keys {
+  flex: none;
+  text-align: right;
+  color: var(--text);
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  background: var(--line-faint);
+  border: 1px solid var(--line-dim);
+  color: var(--line);
+  white-space: nowrap;
+}
+
+@keyframes modal-fade {
+  from {
+    opacity: 0;
+  }
+}
+
 /* Respect users who ask for less motion. */
 @media (prefers-reduced-motion: reduce) {
   .drawer {
     transition: none;
+  }
+  .modal-backdrop {
+    animation: none;
   }
 }

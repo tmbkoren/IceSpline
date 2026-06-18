@@ -64,16 +64,16 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
       ctx.stroke()
     }
 
+    // 2) Cyan grid on the EMPTY background (graph paper). A second, darker grid
+    //    is drawn over the track in step 4b — the opaque ice fill separates the
+    //    two, so empty space reads cyan and the track reads dark, each visible
+    //    against its own backdrop.
     ctx.lineWidth = 1
-    // 2a) Faint per-block grid (skip chunk lines — drawn brighter below). Only
-    //     when cells are big enough that the grid isn't solid noise.
     if (zoom > 3) {
-      ctx.strokeStyle = 'rgba(95, 211, 240, 0.10)' // --line-faint
+      ctx.strokeStyle = 'rgba(95, 211, 240, 0.12)' // faint per-block
       queueLines((g) => g % 16 !== 0)
     }
-    // 2b) Chunk boundaries (every 16 blocks) — the seams Minecraft builders align
-    //     to. Always drawn, a touch brighter.
-    ctx.strokeStyle = 'rgba(95, 211, 240, 0.30)'
+    ctx.strokeStyle = 'rgba(95, 211, 240, 0.32)' // chunk boundaries (every 16)
     queueLines((g) => g % 16 === 0)
 
     // 3) Track blocks (the rasterized output). Each key is an "x,y" grid cell;
@@ -98,6 +98,17 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
     // 4) Highlighted blocks (build mode, M5) — empty until then, but drawn here
     //    to lock in the back-to-front order.
     fillCells(highlightedBlocks, 'rgba(255, 0, 0, 0.4)')
+
+    // 4b) Dark grid OVER the track. Drawn across the whole canvas, but it's only
+    //     perceptible where it lands on the light ice — over the dark background
+    //     it's ink-on-ink and invisible (the cyan grid from step 2 covers that).
+    ctx.lineWidth = 1
+    if (zoom > 3) {
+      ctx.strokeStyle = 'rgba(13, 27, 42, 0.40)' // faint per-block
+      queueLines((g) => g % 16 !== 0)
+    }
+    ctx.strokeStyle = 'rgba(13, 27, 42, 0.68)' // chunk boundaries (every 16)
+    queueLines((g) => g % 16 === 0)
 
     // 5) Bézier curve overlay — a thin white reference line through the spline.
     //    Canvas's bezierCurveTo draws the exact cubic, so we just feed it the

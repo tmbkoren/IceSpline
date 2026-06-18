@@ -12,12 +12,15 @@
 
 import { useState } from 'react'
 import { useStore } from '../core/state'
+import { ControlsDialog } from './ControlsDialog'
 
 export function ControlPanel() {
   // Drawer open/closed is pure chrome state — it doesn't affect canvas geometry,
   // so it lives in React (not the shared store). Default to open on wide screens,
   // closed on phones so the canvas isn't covered on first load.
   const [open, setOpen] = useState(() => window.innerWidth > 768)
+  // The controls/shortcuts modal is pure chrome state too.
+  const [helpOpen, setHelpOpen] = useState(false)
 
   // Each line below is an independent subscription. `curveWidth` is a number,
   // `setCurveWidth` is a stable function reference (Zustand never recreates it),
@@ -38,7 +41,8 @@ export function ControlPanel() {
   const toggleBuildMode = useStore((s) => s.toggleBuildMode)
 
   return (
-    <aside className={`drawer${open ? ' drawer--open' : ''}`}>
+    <>
+      <aside className={`drawer${open ? ' drawer--open' : ''}`}>
       {/* The tab rides outside the drawer's edge, so it stays on-screen and
           interactive whether the drawer is open or closed. */}
       <button
@@ -102,7 +106,14 @@ export function ControlPanel() {
         >
           {isBuildMode ? 'Exit build mode' : 'Enter build mode'}
         </button>
+
+        <button type="button" className="btn" onClick={() => setHelpOpen(true)}>
+          Controls &amp; shortcuts
+        </button>
       </div>
-    </aside>
+      </aside>
+
+      {helpOpen && <ControlsDialog onClose={() => setHelpOpen(false)} />}
+    </>
   )
 }
