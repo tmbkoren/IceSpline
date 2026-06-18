@@ -137,9 +137,17 @@ export function ControlPanel() {
           {isBuildMode ? 'Exit build mode' : 'Enter build mode'}
         </button>
 
-        {/* Build-mode-only: clear all "placed" highlights (also the R key). */}
+        {/* Build-mode-only: clear all "placed" highlights (also the R key).
+            Nothing placed => nothing to reset, so disable it (placedCount is a
+            scalar selector, so this stays off the canvas render path). */}
         {isBuildMode && (
-          <button type="button" className="btn" onClick={clearHighlights}>
+          <button
+            type="button"
+            className="btn"
+            onClick={clearHighlights}
+            disabled={placedCount === 0}
+            title={placedCount === 0 ? 'No placed blocks to reset' : undefined}
+          >
             Reset highlight
           </button>
         )}

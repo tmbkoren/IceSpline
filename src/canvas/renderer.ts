@@ -8,7 +8,8 @@
 // React in the loop (CLAUDE.md rules 1-3).
 
 import { store } from '../core/state'
-import { gridToScreen } from './transform'
+import { getCursor } from '../core/cursor'
+import { gridToScreen, screenToGrid } from './transform'
 
 /**
  * Starts the draw loop on the given canvas and returns a cleanup function
@@ -27,7 +28,7 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
   const draw = () => {
     // Pull the CURRENT state every frame. No subscription, no hook — just a
     // snapshot read. Whatever the UI or input last wrote, we see it here.
-    const { zoom, viewOffset, points, gridBlocks, highlightedBlocks, selectedIndex, showTangents } =
+    const { zoom, viewOffset, points, gridBlocks, highlightedBlocks, selectedIndex, showTangents, isBuildMode } =
       store.getState()
     const { width, height } = canvas
 
@@ -139,7 +140,7 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
     //    tangent; we skip zero-length tangents (nothing to grab, and the dot
     //    would just hide the anchor). Colors per SPEC: mirrored = both red,
     //    otherwise in = green, out = blue.
-    if (showTangents) {
+    if (showTangents && !isBuildMode) {
       for (const p of points) {
         const a = gridToScreen(p.pos.x, p.pos.y, zoom, viewOffset)
         const drawHandle = (tx: number, ty: number, color: string) => {
@@ -177,7 +178,30 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
       ctx.stroke()
     }
 
-    // (8: coordinate label — a later polish milestone.)
+    // 8) Coordinate label: the BLOCK coordinate under the cursor, overlaid in the
+    //    TOP-RIGHT corner. (SPEC says bottom-right, but the floating action dock
+    //    now owns bottom-right and the drawer owns the left, so top-right is the
+    //    one corner that's always clear.) Block = (floor(grid.x), floor(grid.y))
+    //    per CLAUDE.md rule 4 — floor, not truncation, so it stays correct at
+    //    negative coordinates. Drawn on canvas (not React) so it follows the
+    //    cursor without re-rendering React. Hidden when the pointer's off-canvas.
+    const cursor = getCursor()
+    if (cursor.active) {
+      const g = screenToGrid(cursor.x, cursor.y, zoom, viewOffset)
+      const text = `${Math.floor(g.x)}, ${Math.floor(g.y)}`
+      const pad = 6
+      const margin = 10
+      const boxH = 20
+      ctx.font = '13px ui-monospace, "SF Mono", Menlo, Consolas, monospace'
+      ctx.textAlign = 'right'
+      ctx.textBaseline = 'middle'
+      const tw = ctx.measureText(text).width
+      // Translucent backing pill so the label stays legible over the ice fill.
+      ctx.fillStyle = 'rgba(13, 27, 42, 0.78)'
+      ctx.fillRect(width - margin - tw - pad * 2, margin, tw + pad * 2, boxH)
+      ctx.fillStyle = '#a0e8ff'
+      ctx.fillText(text, width - margin - pad, margin + boxH / 2 + 1)
+    }
 
     // Ask the browser to call `draw` again before the next repaint (~60fps).
     // Re-assigning `raf` each frame keeps the id current so cleanup cancels

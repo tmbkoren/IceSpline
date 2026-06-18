@@ -226,9 +226,13 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 0;
   cursor: pointer;
 }
-.btn:hover {
+.btn:hover:not(:disabled) {
   border-color: var(--line);
   color: var(--line);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .btn--active {
   background: var(--line-faint);

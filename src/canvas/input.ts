@@ -13,6 +13,7 @@
 
 import { store } from '../core/state'
 import { downloadMtrack, openMtrackDialog } from '../core/mtrack'
+import { setCursor, clearCursor } from '../core/cursor'
 import { gridToScreen, screenToGrid } from './transform'
 
 // Camera limits (SPEC: zoom slider 2-40 px/block).
@@ -318,6 +319,9 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
 
   const onPointerMove = (e: PointerEvent) => {
     const p = pos(e)
+    // Publish the cursor for the renderer's coordinate label (all modes). This
+    // is a transient write, not store/React — see cursor.ts.
+    setCursor(p.x, p.y)
 
     if (store.getState().isBuildMode) {
       if (e.pointerType === 'mouse') {
@@ -490,6 +494,11 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
 
   const onContextMenu = (e: MouseEvent) => e.preventDefault() // right-drag != menu
 
+  // Hide the coordinate label when the pointer leaves the canvas. Fires for mouse
+  // on mouse-out, and for touch right after pointerup (the touch point ceases to
+  // exist over the element), so one handler covers both.
+  const onPointerLeave = () => clearCursor()
+
   // Keyboard shortcuts (SPEC: Design Mode editing). Window-level because the
   // <canvas> isn't focusable. We bail if the user is typing in a form control
   // so e.g. pressing "c" in the width field doesn't clear the whole track.
@@ -569,6 +578,7 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
   // passive:false: we MUST be allowed to preventDefault to block page scroll.
   canvas.addEventListener('wheel', onWheel, { passive: false })
   canvas.addEventListener('contextmenu', onContextMenu)
+  canvas.addEventListener('pointerleave', onPointerLeave)
   window.addEventListener('keydown', onKeyDown)
 
   return () => {
@@ -578,6 +588,7 @@ export function attachInput(canvas: HTMLCanvasElement): () => void {
     canvas.removeEventListener('pointercancel', onPointerUp)
     canvas.removeEventListener('wheel', onWheel)
     canvas.removeEventListener('contextmenu', onContextMenu)
+    canvas.removeEventListener('pointerleave', onPointerLeave)
     window.removeEventListener('keydown', onKeyDown)
   }
 }
