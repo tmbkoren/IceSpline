@@ -11,7 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mymindstorm/setup-emscripten@v1
+      - name: Install Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+          # Persist emcc on PATH for subsequent steps (each step is a fresh shell)
+          echo "$PWD" >> "$GITHUB_PATH"
+          echo "$PWD/upstream/emscripten" >> "$GITHUB_PATH"
       - run: bash wasm/build.sh
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
