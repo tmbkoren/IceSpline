@@ -31,38 +31,48 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
 
     // 1) Clear/paint the background. We repaint the whole canvas each frame
     //    rather than tracking dirty regions — simple, and fine at this scale.
-    ctx.fillStyle = '#282c34'
+    //    Blueprint ink ground (matches --bg in index.css).
+    ctx.fillStyle = '#0d1b2a'
     ctx.fillRect(0, 0, width, height)
 
-    // 2) Grid lines. Skip them when zoomed out so far they'd be solid noise.
-    //    `zoom` is pixels-per-grid-unit; below ~3px per cell, don't bother.
-    if (zoom > 3) {
-      ctx.strokeStyle = '#3a3f4b'
-      ctx.lineWidth = 1
+    // viewOffset is the grid coord shown at screen pixel (0,0). To convert a
+    // grid coord `g` to a screen pixel: (g - viewOffset) * zoom. We start at the
+    // first whole grid line at/after the top-left edge and step by 1 grid unit
+    // until we march off the right/bottom of the canvas.
+    const startX = Math.floor(viewOffset.x)
+    const startY = Math.floor(viewOffset.y)
+
+    // Graph-paper grid. `queueLines` queues every vertical + horizontal grid
+    // line whose integer grid index passes `keep`, then strokes them in one path
+    // (batching is far cheaper than stroking each line separately).
+    const queueLines = (keep: (gridIndex: number) => boolean) => {
       ctx.beginPath()
-
-      // viewOffset is the grid coord shown at screen pixel (0,0). To convert
-      // a grid coord `g` to a screen pixel: (g - viewOffset) * zoom.
-      // We start at the first whole grid line at/after the left/top edge and
-      // step by 1 grid unit until we march off the right/bottom of the canvas.
-      const startX = Math.floor(viewOffset.x)
-      const startY = Math.floor(viewOffset.y)
-
       for (let gx = startX; (gx - viewOffset.x) * zoom < width; gx++) {
+        if (!keep(gx)) continue
         const sx = Math.round((gx - viewOffset.x) * zoom) // round → crisp 1px line
         ctx.moveTo(sx, 0)
         ctx.lineTo(sx, height)
       }
       for (let gy = startY; (gy - viewOffset.y) * zoom < height; gy++) {
+        if (!keep(gy)) continue
         const sy = Math.round((gy - viewOffset.y) * zoom)
         ctx.moveTo(0, sy)
         ctx.lineTo(width, sy)
       }
-
-      // One stroke() paints all the lines we queued with moveTo/lineTo. Batching
-      // into a single path is far cheaper than stroking each line separately.
       ctx.stroke()
     }
+
+    ctx.lineWidth = 1
+    // 2a) Faint per-block grid (skip chunk lines — drawn brighter below). Only
+    //     when cells are big enough that the grid isn't solid noise.
+    if (zoom > 3) {
+      ctx.strokeStyle = 'rgba(95, 211, 240, 0.10)' // --line-faint
+      queueLines((g) => g % 16 !== 0)
+    }
+    // 2b) Chunk boundaries (every 16 blocks) — the seams Minecraft builders align
+    //     to. Always drawn, a touch brighter.
+    ctx.strokeStyle = 'rgba(95, 211, 240, 0.30)'
+    queueLines((g) => g % 16 === 0)
 
     // (track blocks, the curve, tangent handles, control points, and the
     //  coordinate label are layered in here in later milestones — in this

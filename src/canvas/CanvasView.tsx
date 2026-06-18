@@ -55,7 +55,7 @@ export function CanvasView() {
     }
   }, [])
 
-  // `flex: 1` makes the canvas fill the remaining row space beside the panel
-  // (the App lays them out in a flex row).
-  return <canvas ref={ref} style={{ flex: 1, minWidth: 0, height: '100vh' }} />
+  // Sizing/position is handled in CSS (`canvas { position: fixed; inset: 0 }`):
+  // the canvas is full-bleed and the drawer floats over it.
+  return <canvas ref={ref} />
 }
