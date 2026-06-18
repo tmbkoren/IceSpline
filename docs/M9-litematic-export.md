@@ -17,10 +17,15 @@ Let a user take the ice-road they've laid out in **build mode** and download it 
 
 - **Target user:** a Minecraft player planning an ice road who wants the result as a
   buildable schematic, not just an on-screen plan.
-- **In scope:** export the placed-highlight block set as a single-layer schematic of
-  `minecraft:packed_ice`.
-- **Out of scope:** importing `.litematic`; exporting the full rasterized road;
-  multiple block types; multi-layer / 3D; entities, tile entities, regions beyond one.
+- **In scope:** export the whole rasterized track (`gridBlocks`) as a single-layer
+  schematic of packed_ice or blue_ice.
+- **Out of scope:** importing `.litematic`; multi-layer / 3D; arbitrary block palettes;
+  entities, tile entities, regions beyond one.
+
+> **Decision revised 2026-06-18:** export the WHOLE track (`gridBlocks`), NOT the
+> build-mode highlight subset. The highlight is a legacy visual block-counting aid, not
+> an export selector — exporting only highlighted cells would yield an incomplete
+> schematic. (Supersedes the earlier "placed subset only" call.)
 
 ---
 
@@ -28,16 +33,23 @@ Let a user take the ice-road they've laid out in **build mode** and download it 
 
 | Decision | Value | Rationale |
 |---|---|---|
-| Block set | **`highlightedBlocks`** (the "placed" subset), NOT `gridBlocks` | User chose: the schematic is what the user explicitly placed in build mode. |
+| Block set | **`gridBlocks`** — the whole rasterized track | The schematic is the entire road, not a subset (see revision note above). |
 | Block type | **`minecraft:packed_ice`** (default) or **`minecraft:blue_ice`**, user-toggleable | User chose packed_ice as the default; a toggle lets boat-road builders pick blue_ice (lower friction). |
 | Layers | **single Y layer** (`y = 0`) | Ice roads are one block thick. |
 | Coordinate map | grid `(x, y)` → Minecraft `(x, 0, y)` i.e. `grid.x → MC x`, `grid.y → MC z` | Top-down 2D plan → horizontal MC plane. |
-| Empty set | export is **disabled / no-op** when `placedCount === 0` | Nothing placed → nothing to export. |
+| Empty track | export is **disabled / no-op** when `blockCount === 0` | No track → nothing to export. |
 
-`highlightedBlocks` is a `Set<string>` of `"x,y"` keys; the ints are already
-`floor`ed at toggle time (CLAUDE rule 4). Parse each key, `set_block(x, 0, y, …)`.
+`gridBlocks` is a `Set<string>` of `"x,y"` keys; the ints are already `floor`ed
+(CLAUDE rule 4). Parse each key, `set_block(x, 0, y, …)`.
 
-**Negative coordinates must round-trip** (rule 4 theme): placed blocks can sit at
+**Normalize to the schematic origin.** Subtract the bounding-box min corner from
+every block so the set starts at `(0,0,0)`: `set_block(x - minX, 0, y - minY, …)`.
+Litematica anchors a placement at the schematic origin, so baking absolute grid
+coords in makes the build land hundreds of blocks from where the player places it.
+This also removes negative coords entirely. (Fixed 2026-06-18 after a user reported
+the placement appearing ~500 blocks away.)
+
+**Negative coordinates must round-trip** (rule 4 theme): track blocks can sit at
 negative grid coords. The verification test covers a negative-coord case explicitly.
 
 **Orientation note:** Minecraft `+Z` is south; screen `+y` is downward. The exported
@@ -62,7 +74,7 @@ const { default: init, SchematicWrapper } = await import('nucleation')
 await init()                                   // loads + instantiates the WASM
 const schem = new SchematicWrapper()           // empty schematic
 const block = `minecraft:${iceBlock}`          // 'packed_ice' | 'blue_ice' from store
-for (const key of highlightedBlocks) {
+for (const key of gridBlocks) {
   const [x, y] = key.split(',').map(Number)
   schem.set_block(x, 0, y, block)
 }
@@ -84,14 +96,14 @@ Default filename `track.litematic`.
 
 ## 4. UI / wiring
 
-- A **"Export .litematic"** button, shown in **build mode only** (it exports a
-  build-mode concept), **disabled when `placedCount === 0`** — same pattern as the
-  "Reset highlight" button already in `ControlPanel.tsx`.
-- An **ice-block toggle** (packed_ice / blue_ice) shown alongside it in build mode.
-  Backed by store state `iceBlock: 'packed_ice' | 'blue_ice'` (default `packed_ice`)
-  + a `setIceBlock` action, selected via a scalar `useStore` selector (rule-2-safe).
-  Persisted like the other settings (see build order) so the choice sticks across
-  reloads. Not a curve edit → no undo history.
+- A **"Export .litematic"** button, **always visible** (it exports the whole track,
+  independent of build mode — grouped with the `.mtrack` file ops in
+  `ControlPanel.tsx`), **disabled when `blockCount === 0`** (empty track).
+- An **ice-block toggle** (packed_ice / blue_ice) shown alongside it, also always
+  visible. Backed by store state `iceBlock: 'packed_ice' | 'blue_ice'` (default
+  `packed_ice`) + a `setIceBlock` action, selected via a scalar `useStore` selector
+  (rule-2-safe). Persisted like the other settings (see build order) so the choice
+  sticks across reloads. Not a curve edit → no undo history.
 - The handler is `async`: it shows a lightweight "Exporting…" state (the WASM download
   + instantiate has latency on first click), calls the pipeline, triggers download,
   and surfaces any failure via `window.alert` (consistent with the `.mtrack` import
@@ -149,7 +161,7 @@ prismarine-nbt + pako writer" decision — not a blocker for M9.
 
 **Never:**
 - Put Nucleation in the initial/eager bundle.
-- Export `gridBlocks` (the full road) — only the placed subset.
+- Tie the export to the build-mode highlight subset — export the whole `gridBlocks`.
 - Implement `.litematic` import.
 
 ---
@@ -167,7 +179,8 @@ prismarine-nbt + pako writer" decision — not a blocker for M9.
 3. **`src/core/litematic.ts`:** the lazy export pipeline + `downloadLitematic(blocks,
    iceBlock)`.
 4. **UI:** "Export .litematic" button + ice-block toggle in `ControlPanel.tsx`
-   (build-mode, button disabled when empty) + async/Exporting state + error alert.
+   (always visible, button disabled when `blockCount === 0`) + async/Exporting state
+   + error alert.
 5. **`src/core/litematic.test.ts`:** round-trip via Nucleation reader (or the
    fallback bytes assertion if node-WASM init is flaky); cover both ice blocks.
 6. **Verify:** build → confirm separate lazy chunk + note gzipped size; manual export

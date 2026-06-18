@@ -25,6 +25,13 @@ export interface Vec2 {
 }
 
 /**
+ * Which ice block the .litematic export writes. packed_ice is the classic
+ * ice-road block; blue_ice has lower friction (faster boats). Stored without the
+ * `minecraft:` namespace; the export prefixes it (see core/litematic.ts).
+ */
+export type IceBlock = 'packed_ice' | 'blue_ice'
+
+/**
  * One node of the Bézier spline the user drags around.
  * `pos` is the anchor; `inTangent`/`outTangent` are the two Bézier control
  * handles flanking it (incoming and outgoing). When `mirrored` is true,
@@ -57,6 +64,10 @@ export interface AppState {
   showTangents: boolean
   isBuildMode: boolean
 
+  // --- export settings ---
+  // Which ice block .litematic export emits. Not a curve edit, so no undo history.
+  iceBlock: IceBlock
+
   // --- rasterized output ---
   // Blocks are keyed as "x,y" strings so we get O(1) set membership and
   // automatic dedup. A Set of {x,y} objects wouldn't dedup (object identity),
@@ -78,6 +89,7 @@ export interface AppState {
   setViewOffset: (o: Vec2) => void
   toggleBuildMode: () => void
   toggleTangents: () => void
+  setIceBlock: (block: IceBlock) => void
 
   // --- selection (no history; not a curve edit) ---
   select: (index: number | null) => void
@@ -187,6 +199,7 @@ export const store = createStore<AppState>((set, get) => {
     curveWidth: 10,
     showTangents: true,
     isBuildMode: false,
+    iceBlock: 'packed_ice',
     gridBlocks: new Set(),
     highlightedBlocks: new Set(),
     zoom: 10,
@@ -207,6 +220,7 @@ export const store = createStore<AppState>((set, get) => {
     // Entering build mode locks editing, so drop any selection.
     toggleBuildMode: () => set((s) => ({ isBuildMode: !s.isBuildMode, selectedIndex: null })),
     toggleTangents: () => set((s) => ({ showTangents: !s.showTangents })),
+    setIceBlock: (iceBlock) => set({ iceBlock }),
 
     select: (selectedIndex) => set({ selectedIndex }),
 

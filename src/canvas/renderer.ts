@@ -28,7 +28,7 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
   const draw = () => {
     // Pull the CURRENT state every frame. No subscription, no hook — just a
     // snapshot read. Whatever the UI or input last wrote, we see it here.
-    const { zoom, viewOffset, points, gridBlocks, highlightedBlocks, selectedIndex, showTangents, isBuildMode } =
+    const { zoom, viewOffset, points, gridBlocks, highlightedBlocks, selectedIndex, showTangents, isBuildMode, iceBlock } =
       store.getState()
     const { width, height } = canvas
 
@@ -95,7 +95,9 @@ export function startRenderLoop(canvas: HTMLCanvasElement): () => void {
         ctx.fillRect(sx0, sy0, sx1 - sx0, sy1 - sy0)
       }
     }
-    fillCells(gridBlocks, '#a0e8ff') // ice blue
+    // Tint the fill to match the export block: packed ice = pale cyan, blue ice =
+    // a richer blue, so the canvas previews what the .litematic will contain.
+    fillCells(gridBlocks, iceBlock === 'blue_ice' ? '#5b9bff' : '#a0e8ff')
     // 4) Highlighted blocks (build mode, M5) — empty until then, but drawn here
     //    to lock in the back-to-front order.
     fillCells(highlightedBlocks, 'rgba(255, 0, 0, 0.4)')

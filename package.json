@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -12,6 +13,7 @@
     "bench": "vitest bench --run"
   },
   "dependencies": {
+    "nucleation": "0.2.13",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "vitest": "^4.1.8",

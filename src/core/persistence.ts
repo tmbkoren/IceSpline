@@ -7,7 +7,7 @@
 // only by the browser entry (main.tsx) — never by state.ts, which the node test
 // suite imports (localStorage is undefined there).
 
-import { store, type ControlPoint, type Vec2 } from './state'
+import { store, type ControlPoint, type IceBlock, type Vec2 } from './state'
 import { computeBlocks } from './blocks'
 
 const KEY = 'icespline:v1'
@@ -17,6 +17,7 @@ interface Persisted {
   points: ControlPoint[]
   curveWidth: number
   showTangents: boolean
+  iceBlock: IceBlock
   zoom: number
   viewOffset: Vec2
 }
@@ -79,6 +80,8 @@ export function loadPersisted(): void {
     points,
     curveWidth,
     showTangents: typeof data.showTangents === 'boolean' ? data.showTangents : cur.showTangents,
+    iceBlock:
+      data.iceBlock === 'packed_ice' || data.iceBlock === 'blue_ice' ? data.iceBlock : cur.iceBlock,
     zoom: typeof data.zoom === 'number' ? data.zoom : cur.zoom,
     viewOffset: isVec2(data.viewOffset) ? data.viewOffset : cur.viewOffset,
     selectedIndex: null,
@@ -101,6 +104,7 @@ export function startPersistence(): () => void {
         points: s.points,
         curveWidth: s.curveWidth,
         showTangents: s.showTangents,
+        iceBlock: s.iceBlock,
         zoom: s.zoom,
         viewOffset: s.viewOffset,
       }

@@ -13,6 +13,7 @@
 import { useState } from 'react'
 import { store, useStore } from '../core/state'
 import { downloadMtrack, openMtrackDialog } from '../core/mtrack'
+import { downloadLitematic } from '../core/litematic'
 import { ControlsDialog } from './ControlsDialog'
 
 // Open a .mtrack and load it into the store. Shared shape with the Ctrl+O path in
@@ -58,6 +59,27 @@ export function ControlPanel() {
   const blockCount = useStore((s) => s.gridBlocks.size)
   const placedCount = useStore((s) => s.highlightedBlocks.size)
   const clearHighlights = useStore((s) => s.clearHighlights)
+
+  const iceBlock = useStore((s) => s.iceBlock)
+  const setIceBlock = useStore((s) => s.setIceBlock)
+
+  // The .litematic WASM loads lazily on first export, so the click is async and can
+  // take a beat. `exporting` drives a busy label + guards against double-clicks.
+  const [exporting, setExporting] = useState(false)
+  const exportLitematic = async () => {
+    setExporting(true)
+    try {
+      // Export the WHOLE rasterized track (gridBlocks), not the highlight subset.
+      // Read via getState() (not a subscription) — same render-path discipline as
+      // the .mtrack export (CLAUDE rule 2).
+      const s = store.getState()
+      await downloadLitematic(s.gridBlocks, s.iceBlock)
+    } catch (err) {
+      window.alert(`Couldn't export .litematic: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <>
@@ -164,6 +186,39 @@ export function ControlPanel() {
 
         <button type="button" className="btn" onClick={importTrack}>
           Import .mtrack
+        </button>
+
+        {/* Schematic export: the WHOLE rasterized track (gridBlocks), as the chosen
+            ice block. Independent of build mode — disabled only when the track is
+            empty. blockCount is a scalar selector (rule-2-safe). */}
+        <div className="field">
+          <span className="field__label">ICE BLOCK</span>
+          <div className="segmented">
+            <button
+              type="button"
+              className={`btn${iceBlock === 'packed_ice' ? ' btn--active' : ''}`}
+              onClick={() => setIceBlock('packed_ice')}
+            >
+              Packed
+            </button>
+            <button
+              type="button"
+              className={`btn${iceBlock === 'blue_ice' ? ' btn--active' : ''}`}
+              onClick={() => setIceBlock('blue_ice')}
+            >
+              Blue
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="btn"
+          onClick={exportLitematic}
+          disabled={blockCount === 0 || exporting}
+          title={blockCount === 0 ? 'Draw a track first' : undefined}
+        >
+          {exporting ? 'Exporting…' : 'Export .litematic'}
         </button>
 
         <button type="button" className="btn" onClick={() => setHelpOpen(true)}>

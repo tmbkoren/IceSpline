@@ -240,6 +240,15 @@ input[type="range"]::-moz-range-thumb {
   color: var(--line);
 }
 
+/* A row of mutually-exclusive buttons (e.g. the ice-block picker). */
+.segmented {
+  display: flex;
+  gap: 6px;
+}
+.segmented .btn {
+  flex: 1;
+}
+
 /* --- Floating action dock ------------------------------------------------ */
 
 .dock {
